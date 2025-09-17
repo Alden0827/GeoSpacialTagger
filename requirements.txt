@@ -1,0 +1,5 @@
+streamlit
+pymongo[srv]
+streamlit-folium
+pandas
+streamlit-js-eval
