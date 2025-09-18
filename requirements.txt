@@ -4,4 +4,4 @@ streamlit-folium
 pandas
 streamlit-js-eval
 streamlit-option-menu
-simplekml=1.3.6
+simplekml
