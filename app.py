@@ -48,6 +48,7 @@ def login_page():
 # --- App Page with Sidebar Menu ---
 def app_page():
     from streamlit_option_menu import option_menu
+    import io, simplekml
 
     # --- Initialize session state ---
     if "selected_tab" not in st.session_state:
@@ -63,10 +64,38 @@ def app_page():
             options=tab_options,
             icons=tab_icons,
             menu_icon="cast",
-            default_index=tab_options.index(st.session_state["selected_tab"]),  # 👈 sync with session
+            default_index=tab_options.index(st.session_state["selected_tab"]),
             orientation="vertical",
             key="sidebar_menu"
         )
+
+        st.markdown("---")
+
+        # --- Download KML button ---
+        db = get_db()
+        locations = list(db.locations.find())
+
+        if locations:
+            kml = simplekml.Kml()
+            for loc in locations:
+                name = loc.get("name", "Unknown")
+                hhid = loc.get("hhid", "N/A")
+                lat = loc.get("latitude")
+                lng = loc.get("longitude")
+                if lat is not None and lng is not None:
+                    kml.newpoint(name=f"{name} ({hhid})", coords=[(lng, lat)])
+
+            # ✅ Convert KML string to bytes for download
+            kml_bytes = io.BytesIO(kml.kml().encode("utf-8"))
+
+            st.download_button(
+                label="📥 Download KML",
+                data=kml_bytes,
+                file_name="locations.kml",
+                mime="application/vnd.google-earth.kml+xml"
+            )
+        else:
+            st.info("No locations available for export.")
 
     # --- Sync both ways ---
     if selected != st.session_state["selected_tab"]:
@@ -132,6 +161,7 @@ def location_list_page():
         import traceback
         print("Error in location_list_page:", traceback.format_exc())
 
+
 def map_view_page():
     st.header("Map View")
 
@@ -150,7 +180,6 @@ def map_view_page():
             """,
             key="get_location"
         )
-        print('location:',location)
         if location:
             st.session_state['user_location'] = location
             st.success("✅ Location retrieved!")
@@ -158,8 +187,12 @@ def map_view_page():
         else:
             st.warning("⚠️ Unable to retrieve your location. Please allow location access in your browser.")
 
-    # --- Determine map center ---
-    if 'selected_location' in st.session_state:
+    # --- Determine map center priority ---
+    if "temp_location" in st.session_state:
+        center_lat = st.session_state["temp_location"]["lat"]
+        center_lng = st.session_state["temp_location"]["lng"]
+        zoom = 18
+    elif 'selected_location' in st.session_state:
         center_lat = st.session_state['selected_location']['latitude']
         center_lng = st.session_state['selected_location']['longitude']
         zoom = 17
@@ -168,11 +201,12 @@ def map_view_page():
         center_lng = st.session_state['user_location']['longitude']
         zoom = 15
     else:
-        center_lat, center_lng, zoom = 40.7128, -74.0060, 12
+        center_lat, center_lng, zoom = 6.488797302979707, 124.85166444167126, 24  # koronadal city
 
+    # --- Create map ---
     m = folium.Map(location=[center_lat, center_lng], zoom_start=zoom)
 
-    # --- Add markers ---
+    # --- Add permanent markers ---
     if 'selected_location' in st.session_state:
         loc = st.session_state['selected_location']
         folium.Marker(
@@ -189,28 +223,44 @@ def map_view_page():
             icon=folium.Icon(color="blue")
         ).add_to(m)
 
+    # --- Add temporary marker if exists ---
+    if "temp_location" in st.session_state:
+        tmp = st.session_state["temp_location"]
+        folium.Marker(
+            [tmp["lat"], tmp["lng"]],
+            popup="📍 Selected (not yet saved)",
+            icon=folium.Icon(color="green", icon="info-sign")
+        ).add_to(m)
+
     # --- Render map ---
     map_data = st_folium(m, width=700, height=500)
 
-    # --- Click-to-tag new location ---
+    # --- Capture clicks and store temp marker ---
     if map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lng = map_data["last_clicked"]["lng"]
-        st.write(f"Selected Location: Latitude={lat}, Longitude={lng}")
+        st.session_state["temp_location"] = {"lat": lat, "lng": lng}
+        st.rerun()  # force reload to center map & show marker
 
+    # --- Show form if temp marker exists ---
+    if "temp_location" in st.session_state:
+        tmp = st.session_state["temp_location"]
+        st.info(f"📍 Selected Location: {tmp['lat']:.5f}, {tmp['lng']:.5f}")
         with st.form("location_form"):
             name = st.text_input("Name", key="tag_name")
             hhid = st.text_input("HHID", key="tag_hhid")
-            submit_button = st.form_submit_button("Tag Location", key="tag_submit")
+            submit_button = st.form_submit_button("Tag Location")
             if submit_button:
                 if not name or not hhid:
                     st.error("Please fill in both Name and HHID.")
                 else:
                     db = get_db()
                     db.locations.insert_one(
-                        {"name": name, "hhid": hhid, "latitude": lat, "longitude": lng}
+                        {"name": name, "hhid": hhid, "latitude": tmp["lat"], "longitude": tmp["lng"]}
                     )
                     st.success("✅ Location tagged successfully!")
+                    del st.session_state["temp_location"]
+                    st.rerun()
 
 if __name__ == "__main__":
     main()
