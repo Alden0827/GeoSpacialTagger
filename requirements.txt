@@ -3,3 +3,4 @@ pymongo[srv]
 streamlit-folium
 pandas
 streamlit-js-eval
+streamlit-option-menu
