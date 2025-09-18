@@ -6,6 +6,8 @@ from streamlit_folium import st_folium
 import folium
 from streamlit_js_eval import streamlit_js_eval
 from streamlit_option_menu import option_menu
+from streamlit_option_menu import option_menu
+import io, simplekml
 
 # --- Database Connection ---
 def get_db_connection():
@@ -47,8 +49,7 @@ def login_page():
 
 # --- App Page with Sidebar Menu ---
 def app_page():
-    from streamlit_option_menu import option_menu
-    import io, simplekml
+
 
     # --- Initialize session state ---
     if "selected_tab" not in st.session_state:
